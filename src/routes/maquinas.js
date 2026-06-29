@@ -1,56 +1,56 @@
 // src/routes/maquinas.js
 const express = require('express');
 const router = express.Router();
+const Maquina = require('../models/Maquina'); // Importa o modelo real
 
-// Dados temporários em memória simulando o estoque/cadastro de máquinas (RF02)
-const inventarioMaquinas = [
-  { id: 1, codigoUnico: 'MAQ-001', nome: 'Furadeira de Bancada', quantidade: 3, estoqueMinimo: 2 },
-  { id: 2, codigoUnico: 'MAQ-002', nome: 'Torno Mecânico', quantidade: 1, estoqueMinimo: 2 },
-];
-
-// GET /maquinas -> Lista todas as máquinas cadastradas e valida estoque mínimo
-router.get('/', (req, res) => {
-  const maquinasComStatus = inventarioMaquinas.map(m => ({
-    ...m,
-    status: m.quantidade <= m.estoqueMinimo ? "ALERTA: Estoque Crítico!" : "Estoque Disponível"
-  }));
-  res.json(maquinasComStatus);
+// GET /maquinas -> Lista todas do banco PostgreSQL e valida estoque crítico
+router.get('/', async (req, res) => {
+  try {
+    const maquinas = await Maquina.findAll();
+    const maquinasComStatus = maquinas.map(m => {
+      const data = m.toJSON();
+      return {
+        ...data,
+        status: data.quantidade <= data.estoqueMinimo ? "ALERTA: Estoque Crítico!" : "Estoque Disponível"
+      };
+    });
+    res.json(maquinasComStatus);
+  } catch (error) {
+    res.status(500).json({ erro: 'Erro ao buscar dados no banco PostgreSQL' });
+  }
 });
 
-// GET /maquinas/:id -> Busca uma máquina específica pelo ID/Código Único
-router.get('/:id', (req, res) => {
-  const maquina = inventarioMaquinas.find(m => m.id === Number(req.params.id));
-  if (!maquina) {
-    return res.status(404).json({ erro: 'Máquina não encontrada no sistema' });
+// GET /maquinas/:id -> Busca detalhada por ID real
+router.get('/:id', async (req, res) => {
+  try {
+    const maquina = await Maquina.findByPk(req.params.id);
+    if (!maquina) return res.status(404).json({ erro: 'Máquina não encontrada' });
+    res.json(maquina);
+  } catch (error) {
+    res.status(500).json({ erro: 'Erro ao buscar máquina' });
   }
-  res.json(maquina);
 });
 
-// POST /maquinas -> RF02: Cadastro de Máquinas / RN03: Validação do Código Único
-router.post('/', (req, res) => {
-  const { codigoUnico, nome, quantidade, estoqueMinimo } = req.body;
+// POST /maquinas -> Salva uma nova máquina e valida a RN03
+router.post('/', async (req, res) => {
+  try {
+    const { codigoUnico, nome, quantidade, estoqueMinimo } = req.body;
 
-  // Validação básica de campos obrigatórios
-  if (!codigoUnico || !nome || quantidade === undefined || !estoqueMinimo) {
-    return res.status(400).json({ erro: 'codigoUnico, nome, quantidade e estoqueMinimo são obrigatórios.' });
+    if (!codigoUnico || !nome || quantidade === undefined || !estoqueMinimo) {
+      return res.status(400).json({ erro: 'Todos os campos são obrigatórios.' });
+    }
+
+    // RN03 — Bloqueia código único duplicado direto no banco
+    const codigoJaExiste = await Maquina.findOne({ where: { codigoUnico } });
+    if (codigoJaExiste) {
+      return res.status(400).json({ erro: `RN03 violada: O código ${codigoUnico} já existe.` });
+    }
+
+    const novaMaquina = await Maquina.create({ codigoUnico, nome, quantidade, estoqueMinimo });
+    res.status(201).json(novaMaquina);
+  } catch (error) {
+    res.status(500).json({ erro: 'Erro ao salvar máquina no PostgreSQL' });
   }
-
-  // RN03 — Garante que o código de identificação da máquina é único
-  const codigoJaExiste = inventarioMaquinas.some(m => m.codigoUnico === codigoUnico);
-  if (codigoJaExiste) {
-    return res.status(400).json({ erro: `RN03 violada: Já existe uma máquina cadastrada com o código ${codigoUnico}.` });
-  }
-
-  const novaMaquina = {
-    id: inventarioMaquinas.length + 1,
-    codigoUnico,
-    nome,
-    quantidade: Number(quantidade),
-    estoqueMinimo: Number(estoqueMinimo)
-  };
-
-  inventarioMaquinas.push(novaMaquina);
-  res.status(201).json(novaMaquina);
 });
 
 module.exports = router;

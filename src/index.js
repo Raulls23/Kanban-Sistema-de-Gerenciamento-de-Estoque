@@ -1,16 +1,23 @@
 // src/index.js
 const express = require('express');
+const sequelize = require('./config/database'); // Conexão com o banco
 const maquinasRouter = require('./routes/maquinas');
-const usuariosRouter = require('./routes/usuarios'); // 1. Importa rotas de usuários
+const usuariosRouter = require('./routes/usuarios');
 
 const app = express();
-
 app.use(express.json());
 
-// Vincula os grupos de rotas
 app.use('/maquinas', maquinasRouter);
-app.use('/usuarios', usuariosRouter); // 2. Ativa o endpoint /usuarios/login
+app.use('/usuarios', usuariosRouter);
 
-app.listen(3000, () => {
-  console.log(' Servidor do Estoque rodando em http://localhost:3000');
-});
+// Sincroniza os modelos com o banco PostgreSQL antes de ligar o servidor
+sequelize.sync({ force: false }) // 'force: false' evita apagar os dados existentes
+  .then(() => {
+    console.log('✅ Tabelas sincronizadas com o banco PostgreSQL com sucesso!');
+    app.listen(3000, () => {
+      console.log('📦 Servidor rodando com persistência real em http://localhost:3000');
+    });
+  })
+  .catch(err => {
+    console.error('❌ Erro ao conectar ao PostgreSQL:', err);
+  });
